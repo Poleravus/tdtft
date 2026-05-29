@@ -1,6 +1,9 @@
 extends Node2D
 ## Controlador del nivel MVP: instancia castillo + héroe, lanza oleadas de
 ## slimes y maneja el HUD y el game over vía EventBus.
+##
+## Es el ÚNICO que escribe en GameState: las entidades solo emiten señales y
+## este controlador (futuro RunManager) las traduce a estado de la run.
 
 const SlimeScene := preload("res://src/entities/Enemigos/Slime.tscn")
 const HeroScene := preload("res://src/entities/Hero/Hero.tscn")
@@ -9,7 +12,7 @@ const CastleScene := preload("res://src/entities/Castle/Castle.tscn")
 const WAVE_SIZE: int = 5
 const WAVE_INTERVAL: float = 10.0
 const SPAWN_GAP: float = 0.6     ## segundos entre cada slime de la oleada
-const CASTLE_HP: int = 20
+const CASTLE_HP: int = 20        ## fuente de verdad de la vida del castillo (sobrescribe el default de Castle.gd)
 
 @onready var enemy_path: Path2D = $CaminoEnemigo
 @onready var ui: CanvasLayer = $UI
@@ -27,12 +30,16 @@ func _ready() -> void:
 	game_over_label.hide()
 	GameState.reset()
 
-	_spawn_castle_and_hero()
 	_build_hud()
 
+	# Conectar señales ANTES de instanciar al castillo: él emite base_hp_changed
+	# en su _ready y este controlador es quien escribe el estado en GameState.
 	EventBus.base_hp_changed.connect(_on_base_hp_changed)
 	EventBus.hero_damaged.connect(_on_hero_damaged)
 	EventBus.run_ended.connect(_on_run_ended)
+
+	_spawn_castle_and_hero()
+	_on_hero_damaged(_hero.health, _hero.max_health)  # init del HUD del héroe (no emite en _ready)
 
 	_wave_timer = Timer.new()
 	_wave_timer.wait_time = WAVE_INTERVAL
@@ -60,8 +67,6 @@ func _spawn_castle_and_hero() -> void:
 func _build_hud() -> void:
 	_hp_label = _make_label(Vector2(16, 16))
 	_hero_hp_label = _make_label(Vector2(16, 44))
-	_update_hp_label(GameState.base_hp, GameState.base_hp_max)
-	_on_hero_damaged(_hero.health, _hero.max_health)
 
 
 func _make_label(pos: Vector2) -> Label:
@@ -86,11 +91,14 @@ func _spawn_one() -> void:
 	enemy_path.add_child(follower)
 
 	var slime: Slime = SlimeScene.instantiate()
-	slime.position = Vector2(0, -64)
+	slime.position = Vector2(0, -64)  # centra el sprite del slime sobre el punto del path
 	follower.add_child(slime)
 
 
 func _on_base_hp_changed(current: int, maximum: int) -> void:
+	# el controlador (no el castillo) escribe el estado en GameState
+	GameState.base_hp = current
+	GameState.base_hp_max = maximum
 	_update_hp_label(current, maximum)
 
 

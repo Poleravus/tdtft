@@ -3,7 +3,7 @@ extends Node
 ## Muta aquí y notifica vía EventBus; UI y sistemas reaccionan sin acoplarse.
 
 # --- Identidad de la run ---
-var hero: Node                                ## actor Hero instanciado
+var hero: Hero                                ## actor Hero instanciado
 var universe: Universe
 var castle: CastleData
 

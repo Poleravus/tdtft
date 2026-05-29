@@ -54,38 +54,32 @@ func _physics_process(delta: float) -> void:
 	# regeneración
 	health = minf(max_health, health + health_regen * delta)
 
-	# auto-ataque al más cercano en rango
-	_attack_cd -= delta
-	var enemy := _nearest_enemy()
-	if enemy != null and _attack_cd <= 0.0:
-		enemy.call("take_damage", damage)   # duck-typed para MVP (Slime y futuros enemigos)
-		_attack_cd = 1.0 / attack_speed
-		_beam_to = enemy.global_position
-		_beam_t = 0.12
-
-	# daño por contacto de enemigos pegados
-	for node in get_tree().get_nodes_in_group("enemies"):
-		var e := node as Node2D
-		if e != null and global_position.distance_to(e.global_position) < 36.0:
-			_take_damage(contact_dps * delta)
-
-	if _beam_t > 0.0:
-		_beam_t -= delta
-		queue_redraw()
-
-
-func _nearest_enemy() -> Node2D:
-	var best: Node2D = null
-	var best_d := attack_range
+	# Un solo recorrido del grupo: busca al más cercano en rango y, de paso,
+	# aplica el daño por contacto de los enemigos pegados.
+	var nearest: Node2D = null
+	var nearest_d := attack_range
 	for node in get_tree().get_nodes_in_group("enemies"):
 		var e := node as Node2D
 		if e == null:
 			continue
 		var d := global_position.distance_to(e.global_position)
-		if d <= best_d:
-			best_d = d
-			best = e
-	return best
+		if d <= nearest_d:
+			nearest_d = d
+			nearest = e
+		if d < 36.0:
+			_take_damage(contact_dps * delta)
+
+	# auto-ataque al más cercano
+	_attack_cd -= delta
+	if nearest != null and _attack_cd <= 0.0:
+		nearest.call("take_damage", damage)   # duck-typed para MVP (Slime y futuros enemigos)
+		_attack_cd = 1.0 / attack_speed
+		_beam_to = nearest.global_position
+		_beam_t = 0.12
+
+	if _beam_t > 0.0:
+		_beam_t -= delta
+		queue_redraw()
 
 
 func _take_damage(amount: float) -> void:
