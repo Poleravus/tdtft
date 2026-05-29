@@ -1,0 +1,90 @@
+[gd_scene format=3 uid="uid://oyo2awnirdvc"]
+
+[ext_resource type="Texture2D" uid="uid://b7nbchc1bcple" path="res://assets/sprites/enemigos/With_Shadows/Monster_Slime_Walk-Sheet.png" id="1_eff1q"]
+[ext_resource type="Script" path="res://src/entities/Enemigos/Slime.gd" id="2_script"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_n7eoc"]
+atlas = ExtResource("1_eff1q")
+region = Rect2(0, 0, 96, 96)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_35rml"]
+atlas = ExtResource("1_eff1q")
+region = Rect2(96, 0, 96, 96)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_f4tgm"]
+atlas = ExtResource("1_eff1q")
+region = Rect2(192, 0, 96, 96)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_e6gr6"]
+atlas = ExtResource("1_eff1q")
+region = Rect2(288, 0, 96, 96)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_c2uea"]
+atlas = ExtResource("1_eff1q")
+region = Rect2(384, 0, 96, 96)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_7r4fr"]
+atlas = ExtResource("1_eff1q")
+region = Rect2(480, 0, 96, 96)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_mjsf4"]
+atlas = ExtResource("1_eff1q")
+region = Rect2(576, 0, 96, 96)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3jgy4"]
+atlas = ExtResource("1_eff1q")
+region = Rect2(672, 0, 96, 96)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_6vg00"]
+animations = [{
+"frames": [],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_n7eoc")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_35rml")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_f4tgm")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_e6gr6")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_c2uea")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_7r4fr")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_mjsf4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3jgy4")
+}],
+"loop": true,
+"name": &"walk",
+"speed": 5.0
+}]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_eltsa"]
+size = Vector2(32, 32)
+
+[node name="Slime" type="CharacterBody2D" unique_id=842321492]
+script = ExtResource("2_script")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1555689913]
+position = Vector2(16, 48)
+sprite_frames = SubResource("SpriteFrames_6vg00")
+animation = &"walk"
+frame_progress = 0.90156054
+speed_scale = 2.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=259527882]
+position = Vector2(16, 48)
+shape = SubResource("RectangleShape2D_eltsa")
