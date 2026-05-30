@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="EnemyData" format=3 uid="uid://5o6a24x57a5q"]
+
+[ext_resource type="Script" uid="uid://cw8vb02j45l7g" path="res://src/content/enemy_data.gd" id="1"]
+[ext_resource type="Script" uid="uid://4t2uuql55fou" path="res://src/content/modifier.gd" id="1_pssbi"]
+[ext_resource type="Script" uid="uid://d3lump1y2msij" path="res://src/content/combat_stats.gd" id="2"]
+
+[sub_resource type="Resource" id="stats"]
+script = ExtResource("2")
+max_health = 30.0
+damage = 0.0
+
+[resource]
+script = ExtResource("1")
+display_name = "Slime"
+stats = SubResource("stats")
+damage_to_castle = 2.0

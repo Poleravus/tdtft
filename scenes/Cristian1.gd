@@ -38,8 +38,7 @@ func _ready() -> void:
 	EventBus.hero_damaged.connect(_on_hero_damaged)
 	EventBus.run_ended.connect(_on_run_ended)
 
-	_spawn_castle_and_hero()
-	_on_hero_damaged(_hero.health, _hero.max_health)  # init del HUD del héroe (no emite en _ready)
+	_spawn_castle_and_hero()  # castillo y héroe emiten su vida inicial al entrar (HUD se llena solo)
 
 	_wave_timer = Timer.new()
 	_wave_timer.wait_time = WAVE_INTERVAL
@@ -52,7 +51,6 @@ func _ready() -> void:
 func _spawn_castle_and_hero() -> void:
 	var curve := enemy_path.curve
 	var end_global := enemy_path.to_global(curve.get_point_position(curve.point_count - 1))
-	var start_global := enemy_path.to_global(curve.get_point_position(0))
 
 	_castle = CastleScene.instantiate()
 	_castle.max_health = CASTLE_HP
@@ -61,7 +59,8 @@ func _spawn_castle_and_hero() -> void:
 
 	_hero = HeroScene.instantiate()
 	add_child(_hero)
-	_hero.global_position = start_global.lerp(end_global, 0.5)  # a medio camino
+	# SOBRE el camino, a la mitad del recorrido real: ahí pasan los slimes
+	_hero.global_position = enemy_path.to_global(curve.sample_baked(curve.get_baked_length() * 0.5))
 
 
 func _build_hud() -> void:

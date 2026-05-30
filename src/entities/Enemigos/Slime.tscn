@@ -2,6 +2,7 @@
 
 [ext_resource type="Texture2D" uid="uid://b7nbchc1bcple" path="res://assets/sprites/enemigos/With_Shadows/Monster_Slime_Walk-Sheet.png" id="1_eff1q"]
 [ext_resource type="Script" path="res://src/entities/Enemigos/Slime.gd" id="2_script"]
+[ext_resource type="Resource" path="res://resources/enemies/slime.tres" id="3_data"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_n7eoc"]
 atlas = ExtResource("1_eff1q")
@@ -77,6 +78,7 @@ size = Vector2(32, 32)
 
 [node name="Slime" type="CharacterBody2D" unique_id=842321492]
 script = ExtResource("2_script")
+data = ExtResource("3_data")
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1555689913]
 position = Vector2(16, 48)

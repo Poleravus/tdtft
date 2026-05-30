@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="HeroData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/content/hero_data.gd" id="1"]
+[ext_resource type="Script" path="res://src/content/combat_stats.gd" id="2"]
+
+[sub_resource type="Resource" id="stats"]
+script = ExtResource("2")
+max_health = 200.0
+damage = 35.0
+resistance = 0.0
+penetration = 0.0
+attack_speed = 1.2
+attack_range = 220.0
+health_regen = 10.0
+
+[resource]
+script = ExtResource("1")
+display_name = "Heroe MVP"
+stats = SubResource("stats")
+max_mana = 100.0
+move_speed = 300.0
+size = 1.0
