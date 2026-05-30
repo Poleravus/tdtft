@@ -9214,7 +9214,7 @@ tile_set = SubResource("TileSet_bria4")
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1208376368]
 position = Vector2(736.00006, 96.00002)
 rotation = -0.2617994
-zoom = Vector2(0.75, 0.75)
+zoom = Vector2(0.5, 0.5)
 
 [node name="CaminoEnemigo" type="Path2D" parent="." unique_id=1432068722]
 curve = SubResource("Curve2D_xn5hk")

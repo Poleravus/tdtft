@@ -71,7 +71,7 @@ func _try_attack_hero(delta: float) -> void:
 
 func _die() -> void:
 	_finished = true
-	EventBus.enemy_died.emit(self)
+	EventBus.enemy_died.emit(self, data.gold_reward)
 	_free_follower()
 
 

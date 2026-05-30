@@ -7,6 +7,8 @@ extends CharacterBody2D
 @export var data: HeroData
 @export var respawn_time: float = 3.0
 
+const ATTACK_SPEED_PER_LEVEL: float = 0.08  ## +8% vel. de ataque por nivel del jugador
+
 var combat := CombatStatsComponent.new()
 var _target_pos: Vector2
 var _spawn_pos: Vector2
@@ -27,6 +29,7 @@ func _ready() -> void:
 		set_physics_process(false)
 		return
 	add_to_group("hero")
+	EventBus.level_changed.connect(_on_level_up)
 	combat.health_changed.connect(_on_health_changed)
 	combat.died.connect(_on_died)
 	combat.setup(data.stats, _build_modifiers())
@@ -37,6 +40,18 @@ func _build_modifiers() -> Array[Modifier]:
 	if data.passive != null:
 		mods.append(data.passive)
 	return mods
+
+
+## Cada nivel del jugador le suma velocidad de ataque al héroe (vía el pipeline
+## de modificadores: cada subida añade un +% acumulable).
+func _on_level_up(_level: int) -> void:
+	var d := StatDelta.new()
+	d.stat = "attack_speed"
+	d.op = StatDelta.Op.PERCENT_ADD
+	d.value = ATTACK_SPEED_PER_LEVEL
+	var m := Modifier.new()
+	m.deltas.append(d)
+	combat.add_modifier(m)
 
 
 func _unhandled_input(event: InputEvent) -> void:
