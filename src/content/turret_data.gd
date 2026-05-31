@@ -7,6 +7,8 @@ extends Resource
 @export var scene: PackedScene
 @export var stats: CombatStats                ## daño, vel ataque, rango
 @export_enum("Single", "AoE", "Chain", "DoT") var attack_type: int = 0
+@export var splash_radius: float = 0.0                 ## >0 = daño en área (bombardero)
+@export var body_color: Color = Color(0.3, 0.8, 0.3)  ## color del cuadrado (placeholder)
 @export var rarity: Rarity.Tier = Rarity.Tier.COMUN
 @export var traits: Array[Trait] = []         ## sinergias
 @export var star_stat_multiplier: float = 1.8 ## stats ×este factor por cada estrella

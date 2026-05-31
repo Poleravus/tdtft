@@ -24,8 +24,9 @@ signal base_hp_changed(current: int, maximum: int)
 
 # --- Combate ---
 signal enemy_spawned(enemy: Node)
-signal enemy_died(enemy: Node)
+signal enemy_died(enemy: Node, bounty: int)
 signal enemy_reached_castle(damage: int)
+signal wave_cleared(round_number: int)
 signal hero_damaged(current: float, maximum: float)
 signal hero_died
 signal hero_ability_used(ability: Ability)

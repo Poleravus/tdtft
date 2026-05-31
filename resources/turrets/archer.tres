@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="TurretData" format=3 uid="uid://qlq4oyrwip62"]
+
+[ext_resource type="Script" uid="uid://dt7c7sfyjjfpx" path="res://src/content/turret_data.gd" id="1"]
+[ext_resource type="Script" uid="uid://d3lump1y2msij" path="res://src/content/combat_stats.gd" id="2"]
+[ext_resource type="Script" uid="uid://da4w4yjl48yfw" path="res://src/content/trait.gd" id="3_etguu"]
+
+[sub_resource type="Resource" id="stats"]
+script = ExtResource("2")
+max_health = 1.0
+damage = 15.0
+attack_range = 150.0
+
+[resource]
+script = ExtResource("1")
+display_name = "Arquero"
+stats = SubResource("stats")

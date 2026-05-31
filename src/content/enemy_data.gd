@@ -9,4 +9,5 @@ extends Resource
 @export var damage_to_hero: float = 5.0
 @export var damage_to_castle: float = 1.0     ## daño plano al castillo (sin resist)
 @export var hero_aggro_range: float = 48.0    ## si el héroe entra, lo ataca; si no, sigue
+@export var gold_reward: int = 2              ## oro que suelta al morir
 @export var modifiers: Array[Modifier] = []

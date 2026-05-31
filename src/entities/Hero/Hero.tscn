@@ -1,12 +1,14 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://src/entities/Hero/Hero.gd" id="1_hero"]
+[ext_resource type="Resource" path="res://resources/heroes/hero_mvp.tres" id="2_data"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_hero"]
 radius = 16.0
 
 [node name="Hero" type="CharacterBody2D"]
 script = ExtResource("1_hero")
+data = ExtResource("2_data")
 
 [node name="Body" type="Polygon2D" parent="."]
 color = Color(0.3, 0.6, 1, 1)
