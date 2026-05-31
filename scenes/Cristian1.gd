@@ -1,9 +1,9 @@
 extends Node2D
-## Controlador del nivel: castillo + héroe, oleadas, HUD y TIENDA (siempre
-## disponible): 5 slots por odds/pool, banca (máx 12), reroll, comprar XP,
-## colocar sobre el pasto (limitado por slots de tablero = nivel) y vender
-## (clic derecho + confirmar) unidades de banca o tablero. La ronda arranca
-## solo con "Empezar". RunManager lleva fases/economía; ShopSystem la tienda.
+## Controlador del nivel: castillo + héroe, oleadas, HUD y TIENDA. Las unidades
+## poseídas son {data, star}: 3 iguales (misma estrella) se combinan en una de
+## estrella+1 (banca o tablero), hasta 4★. Colocar solo en preparación, limitado
+## por slots de tablero (= nivel). Vender (clic derecho + confirmar). RunManager
+## lleva fases/economía; ShopSystem la tienda.
 
 const SlimeScene := preload("res://src/entities/Enemigos/Slime.tscn")
 const HeroScene := preload("res://src/entities/Hero/Hero.tscn")
@@ -51,9 +51,9 @@ var _alive: int = 0
 var _spawning: bool = false
 var _wave_active: bool = false
 
-var _placing_unit: TurretData = null
+var _placing_unit: Dictionary = {}       ## {data, star} elegido para colocar; {} = nada
 var _board: Dictionary = {}              ## celda (Vector2i) -> Turret colocada
-var _sell_pending: Dictionary = {}       ## {} = nada; o {kind, unit, value, turret?}
+var _sell_pending: Dictionary = {}       ## venta pendiente (clic derecho)
 
 
 func _ready() -> void:
@@ -98,7 +98,7 @@ func _input(event: InputEvent) -> void:
 		return
 	if get_viewport().gui_get_hovered_control() != null:
 		return  # clic sobre la UI: que lo maneje el control
-	if _placing_unit != null:
+	if not _placing_unit.is_empty():
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_try_place(get_global_mouse_position())
 			get_viewport().set_input_as_handled()
@@ -108,8 +108,9 @@ func _input(event: InputEvent) -> void:
 	elif event.button_index == MOUSE_BUTTON_RIGHT:
 		var t := _turret_at(get_global_mouse_position())
 		if t != null:
-			_offer_sell({"kind": "board", "turret": t, "unit": (t as Turret).data,
-					"value": _sell_value((t as Turret).data)})
+			var tt := t as Turret
+			_offer_sell({"kind": "board", "turret": t, "data": tt.data, "star": tt.star,
+					"value": _sell_value(tt.data, tt.star)})
 			get_viewport().set_input_as_handled()
 
 
@@ -123,14 +124,20 @@ func _try_place(world_pos: Vector2) -> void:
 	if not _can_build_at(world_pos):
 		return
 	var cell := mapa.local_to_map(mapa.to_local(world_pos))
-	var turret := TurretScene.instantiate()
-	turret.data = _placing_unit
-	add_child(turret)
-	turret.global_position = mapa.to_global(mapa.map_to_local(cell))
-	_board[cell] = turret
+	_spawn_turret_at(cell, _placing_unit["data"], _placing_unit["star"])
 	GameState.bench.erase(_placing_unit)
 	_cancel_placing()
 	_refresh_bench()
+	_check_combines()
+
+
+func _spawn_turret_at(cell: Vector2i, data: TurretData, star: int) -> void:
+	var turret := TurretScene.instantiate()
+	turret.data = data
+	turret.star = star
+	add_child(turret)
+	turret.global_position = mapa.to_global(mapa.map_to_local(cell))
+	_board[cell] = turret
 
 
 func _can_build_at(world_pos: Vector2) -> bool:
@@ -144,7 +151,7 @@ func _can_build_at(world_pos: Vector2) -> bool:
 
 
 func _cancel_placing() -> void:
-	_placing_unit = null
+	_placing_unit = {}
 	_hint_label.visible = false
 
 
@@ -156,32 +163,80 @@ func _turret_at(world_pos: Vector2) -> Node:
 	return null
 
 
-# --- Vender (clic derecho + confirmar) ---
-func _sell_value(unit: TurretData) -> int:
-	return maxi(1, _shop.unit_cost(unit) - 1)
+# --- Combinar 3 iguales -> estrella+1 (banca + tablero) ---
+func _check_combines() -> void:
+	while _try_one_combine():
+		pass
+
+
+func _try_one_combine() -> bool:
+	var groups := {}
+	for entry in GameState.bench:
+		_group_add(groups, entry["data"], entry["star"], "bench", entry)
+	for cell in _board:
+		var t = _board[cell]
+		_group_add(groups, t.data, t.star, "board", cell)
+	for key in groups:
+		var g = groups[key]
+		if g["star"] < ShopConfig.MAX_STAR and g["bench"].size() + g["board"].size() >= 3:
+			_do_merge(g)
+			return true
+	return false
+
+
+func _group_add(groups: Dictionary, data: TurretData, star: int, kind: String, ref) -> void:
+	var key := str(data.get_instance_id()) + "_" + str(star)
+	if not groups.has(key):
+		groups[key] = {"data": data, "star": star, "bench": [], "board": []}
+	groups[key][kind].append(ref)
+
+
+func _do_merge(g: Dictionary) -> void:
+	var from_bench: int = mini(3, g["bench"].size())
+	var from_board: int = 3 - from_bench
+	for i in from_bench:
+		GameState.bench.erase(g["bench"][i])
+	var freed: Array = []
+	for j in from_board:
+		var cell = g["board"][j]
+		var t = _board.get(cell)
+		if is_instance_valid(t):
+			t.queue_free()
+		_board.erase(cell)
+		freed.append(cell)
+	if freed.size() > 0:
+		_spawn_turret_at(freed[0], g["data"], g["star"] + 1)
+	else:
+		GameState.bench.append({"data": g["data"], "star": g["star"] + 1})
+	_refresh_bench()
+
+
+# --- Vender ---
+func _sell_value(data: TurretData, star: int) -> int:
+	return _shop.sell_value(_shop.unit_cost(data), star)
 
 
 func _offer_sell(pending: Dictionary) -> void:
 	_sell_pending = pending
-	_sell_button.text = "Vender %s (+%d)" % [pending.unit.display_name, pending.value]
+	_sell_button.text = "Vender %s ★%d (+%d)" % [pending["data"].display_name, pending["star"], pending["value"]]
 	_sell_button.visible = true
 
 
 func _do_sell() -> void:
 	if _sell_pending.is_empty():
 		return
-	if _sell_pending.kind == "bench":
-		GameState.bench.erase(_sell_pending.unit)
+	if _sell_pending["kind"] == "bench":
+		GameState.bench.erase(_sell_pending["entry"])
 		_refresh_bench()
 	else:
-		var t = _sell_pending.turret
+		var t = _sell_pending["turret"]
 		for cell in _board.keys():
 			if _board[cell] == t:
 				_board.erase(cell)
 				break
 		if is_instance_valid(t):
 			t.queue_free()
-	RunManager.add_gold(_sell_pending.value)
+	RunManager.add_gold(_sell_pending["value"])
 	_cancel_sell()
 
 
@@ -211,10 +266,11 @@ func _on_slot_pressed(i: int) -> void:
 	if not RunManager.can_afford(cost) or not _shop.buy(unit):
 		return
 	RunManager.spend_gold(cost)
-	GameState.bench.append(unit)
+	GameState.bench.append({"data": unit, "star": 1})
 	_shop_offer[i] = null
 	_refresh_shop()
 	_refresh_bench()
+	_check_combines()
 
 
 func _on_reroll_pressed() -> void:
@@ -235,13 +291,14 @@ func _on_bench_pressed(i: int) -> void:
 		return
 	if i < GameState.bench.size():
 		_placing_unit = GameState.bench[i]
-		_hint_label.text = "Coloca %s en el pasto · clic derecho cancela" % _placing_unit.display_name
+		_hint_label.text = "Coloca %s en el pasto · clic derecho cancela" % _placing_unit["data"].display_name
 		_hint_label.visible = true
 
 
-func _on_bench_gui_input(event: InputEvent, unit: TurretData) -> void:
+func _on_bench_gui_input(event: InputEvent, entry: Dictionary) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
-		_offer_sell({"kind": "bench", "unit": unit, "value": _sell_value(unit)})
+		_offer_sell({"kind": "bench", "entry": entry, "data": entry["data"], "star": entry["star"],
+				"value": _sell_value(entry["data"], entry["star"])})
 
 
 func _on_hide_toggled(pressed: bool) -> void:
@@ -307,21 +364,19 @@ func _build_shop_ui() -> void:
 	start.pressed.connect(RunManager.request_start_round)
 	_shop_box.add_child(start)
 
-	# botón de venta (aparece al hacer clic derecho sobre una unidad)
 	_sell_button = Button.new()
 	_sell_button.visible = false
 	_sell_button.anchor_left = 0.5
 	_sell_button.anchor_right = 0.5
 	_sell_button.anchor_top = 1.0
 	_sell_button.anchor_bottom = 1.0
-	_sell_button.offset_left = -120.0
-	_sell_button.offset_right = 120.0
+	_sell_button.offset_left = -130.0
+	_sell_button.offset_right = 130.0
 	_sell_button.offset_top = -184.0
 	_sell_button.offset_bottom = -144.0
 	_sell_button.pressed.connect(_do_sell)
 	ui.add_child(_sell_button)
 
-	# botón ocultar/mostrar tienda (siempre visible, arriba a la derecha)
 	_hide_button = Button.new()
 	_hide_button.text = "Ocultar tienda"
 	_hide_button.toggle_mode = true
@@ -335,7 +390,6 @@ func _build_shop_ui() -> void:
 	ui.add_child(_hide_button)
 
 
-## Ancla un Control horizontal abajo (ancho completo), con offsets top/bottom.
 func _anchor_row(c: Control, top: float, bottom: float) -> void:
 	c.anchor_left = 0.0
 	c.anchor_right = 1.0
@@ -365,13 +419,13 @@ func _refresh_bench() -> void:
 	for child in _bench_box.get_children():
 		child.queue_free()
 	for i in GameState.bench.size():
-		var unit: TurretData = GameState.bench[i]
+		var entry = GameState.bench[i]
 		var b := Button.new()
-		b.text = unit.display_name
-		b.custom_minimum_size = Vector2(90, 36)
-		b.modulate = unit.body_color.lerp(Color.WHITE, 0.45)
+		b.text = "%s ★%d" % [entry["data"].display_name, entry["star"]]
+		b.custom_minimum_size = Vector2(96, 36)
+		b.modulate = entry["data"].body_color.lerp(Color.WHITE, 0.45)
 		b.pressed.connect(_on_bench_pressed.bind(i))
-		b.gui_input.connect(_on_bench_gui_input.bind(unit))
+		b.gui_input.connect(_on_bench_gui_input.bind(entry))
 		_bench_box.add_child(b)
 
 
