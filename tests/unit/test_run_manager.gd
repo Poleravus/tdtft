@@ -9,5 +9,6 @@ func test_interes_escala_y_se_topa() -> void:
 
 
 func test_xp_necesaria_sube_con_nivel() -> void:
-	assert_eq(RunManager.xp_needed(1), 5)
-	assert_eq(RunManager.xp_needed(4), 20)
+	assert_eq(RunManager.xp_needed(1), 2)    # nivel 1 -> 2
+	assert_eq(RunManager.xp_needed(2), 8)    # nivel 2 -> 8
+	assert_eq(RunManager.xp_needed(4), 32)   # curva nivel² × 2
