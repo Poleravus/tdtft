@@ -65,6 +65,12 @@ var _augment_panel: Panel
 var _augment_buttons: Array = []
 var _augment_options: Array = []
 var _augments_done: Dictionary = {}
+var _defeat_panel: Panel
+var _defeat_label: Label
+var _augment_reopen_button: Button
+var _speed_button: Button
+var _speed_index: int = 0
+var _augment_pending: bool = false
 
 var _alive: int = 0
 var _spawning: bool = false
@@ -79,6 +85,7 @@ var _elapsed: float = 0.0
 
 
 func _ready() -> void:
+	Engine.time_scale = 1.0
 	game_over_label.hide()
 	GameState.shop_config = ShopConfig.new()
 	GameState.universe = UniverseRes
@@ -88,6 +95,7 @@ func _ready() -> void:
 	_build_hud()
 	_build_shop_ui()
 	_build_augment_ui()
+	_build_defeat_ui()
 	_refresh_synergies()
 
 	EventBus.base_hp_changed.connect(_on_base_hp_changed)
@@ -119,6 +127,8 @@ func _spawn_castle_and_hero() -> void:
 	add_child(_castle)
 	_castle.global_position = end_global
 	_hero = HeroScene.instantiate()
+	if GameState.selected_hero != null:
+		_hero.data = GameState.selected_hero   # héroe elegido en el menú
 	add_child(_hero)
 	_hero.global_position = enemy_path.to_global(curve.sample_baked(curve.get_baked_length() * 0.5))
 
@@ -363,6 +373,8 @@ func _offer_augments() -> void:
 	for i in _augment_buttons.size():
 		var aug = _augment_options[i]
 		_augment_buttons[i].text = "%s\n%s" % [aug.display_name, aug.description]
+	_augment_pending = true
+	_augment_reopen_button.hide()
 	_augment_panel.show()
 
 
@@ -374,8 +386,28 @@ func _on_augment_pressed(i: int) -> void:
 func _choose_augment(aug) -> void:
 	GameState.active_augments.append(aug)
 	EventBus.augment_chosen.emit(aug)
+	_augment_pending = false
+	_augment_reopen_button.hide()
 	_augment_panel.hide()
 	_refresh_synergies()
+
+
+func _on_augment_hide() -> void:
+	_augment_panel.hide()
+	if _augment_pending:
+		_augment_reopen_button.show()
+
+
+func _on_augment_reopen() -> void:
+	_augment_panel.show()
+	_augment_reopen_button.hide()
+
+
+func _on_speed_pressed() -> void:
+	var speeds := [1.0, 2.0, 3.0]
+	_speed_index = (_speed_index + 1) % speeds.size()
+	Engine.time_scale = speeds[_speed_index]
+	_speed_button.text = "Velocidad x%d" % int(speeds[_speed_index])
 
 
 func _build_augment_ui() -> void:
@@ -414,6 +446,87 @@ func _build_augment_ui() -> void:
 		b.pressed.connect(_on_augment_pressed.bind(i))
 		vb.add_child(b)
 		_augment_buttons.append(b)
+
+	var hide_aug := Button.new()
+	hide_aug.text = "Ver mesa (ocultar)"
+	hide_aug.pressed.connect(_on_augment_hide)
+	vb.add_child(hide_aug)
+
+	_augment_reopen_button = Button.new()
+	_augment_reopen_button.text = "Elegir aumento"
+	_augment_reopen_button.visible = false
+	_augment_reopen_button.anchor_left = 0.5
+	_augment_reopen_button.anchor_right = 0.5
+	_augment_reopen_button.offset_left = -90.0
+	_augment_reopen_button.offset_right = 90.0
+	_augment_reopen_button.offset_top = 48.0
+	_augment_reopen_button.offset_bottom = 84.0
+	_augment_reopen_button.pressed.connect(_on_augment_reopen)
+	ui.add_child(_augment_reopen_button)
+
+
+# --- Pantalla de derrota ---
+func _build_defeat_ui() -> void:
+	_defeat_panel = Panel.new()
+	_defeat_panel.visible = false
+	_defeat_panel.process_mode = Node.PROCESS_MODE_ALWAYS  # clickeable con el árbol en pausa
+	_defeat_panel.anchor_left = 0.5
+	_defeat_panel.anchor_top = 0.5
+	_defeat_panel.anchor_right = 0.5
+	_defeat_panel.anchor_bottom = 0.5
+	_defeat_panel.offset_left = -220.0
+	_defeat_panel.offset_right = 220.0
+	_defeat_panel.offset_top = -150.0
+	_defeat_panel.offset_bottom = 150.0
+	ui.add_child(_defeat_panel)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	vb.anchor_right = 1.0
+	vb.anchor_bottom = 1.0
+	vb.offset_left = 16.0
+	vb.offset_top = 16.0
+	vb.offset_right = -16.0
+	vb.offset_bottom = -16.0
+	_defeat_panel.add_child(vb)
+
+	var t := Label.new()
+	t.text = "Derrota"
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t.add_theme_font_size_override("font_size", 40)
+	vb.add_child(t)
+
+	_defeat_label = Label.new()
+	_defeat_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(_defeat_label)
+
+	var retry := Button.new()
+	retry.text = "Reintentar"
+	retry.custom_minimum_size = Vector2(0, 50)
+	retry.pressed.connect(_on_retry)
+	vb.add_child(retry)
+
+	var menu := Button.new()
+	menu.text = "Menú principal"
+	menu.custom_minimum_size = Vector2(0, 50)
+	menu.pressed.connect(_on_menu)
+	vb.add_child(menu)
+
+
+func _show_defeat() -> void:
+	_defeat_label.text = "Llegaste a la ronda %d\nTiempo: %02d:%02d" % [GameState.round_number, int(_elapsed) / 60, int(_elapsed) % 60]
+	_defeat_panel.show()
+	get_tree().paused = true
+
+
+func _on_retry() -> void:
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/Cristian1.tscn")
+
+
+func _on_menu() -> void:
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 
 # --- HUD + UI ---
@@ -468,6 +581,12 @@ func _build_shop_ui() -> void:
 	xp.pressed.connect(_on_xp_pressed)
 	_shop_box.add_child(xp)
 
+	var lock := CheckButton.new()
+	lock.text = "Fijar"
+	lock.button_pressed = GameState.shop_locked
+	lock.toggled.connect(func(on: bool): GameState.shop_locked = on)
+	_shop_box.add_child(lock)
+
 	var start := Button.new()
 	start.text = "▶ Empezar"
 	start.custom_minimum_size = Vector2(110, 64)
@@ -501,6 +620,11 @@ func _build_shop_ui() -> void:
 	_hide_button.toggle_mode = true
 	_hide_button.toggled.connect(_on_hide_toggled)
 	ui.add_child(_hide_button)
+
+	_speed_button = _corner_button("Velocidad x1", -460.0, -312.0)
+	_speed_button.process_mode = Node.PROCESS_MODE_ALWAYS
+	_speed_button.pressed.connect(_on_speed_pressed)
+	ui.add_child(_speed_button)
 
 	# overlay de PAUSA (centro)
 	_pause_overlay = Label.new()
@@ -627,12 +751,15 @@ func _on_progress_changed(_v: int) -> void:
 func _on_phase_changed(phase: int) -> void:
 	if phase == RunManager.Phase.PREP:
 		_round_label.text = "Ronda %d — preparación" % (GameState.round_number + 1)
-		_roll_shop()
+		if not GameState.shop_locked:
+			_roll_shop()
 		_maybe_offer_augment()
 	else:
 		_cancel_placing()
 		_cancel_sell()
 		_augment_panel.hide()
+		_augment_reopen_button.hide()
+		_augment_pending = false
 		_round_label.text = "Ronda %d — ¡combate!" % GameState.round_number
 
 
@@ -690,4 +817,4 @@ func _on_run_ended(victory: bool) -> void:
 	_cancel_placing()
 	_cancel_sell()
 	if not victory:
-		game_over_label.show()
+		_show_defeat()

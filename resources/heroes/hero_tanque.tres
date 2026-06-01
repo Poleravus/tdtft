@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="HeroData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/content/hero_data.gd" id="1"]
+[ext_resource type="Script" path="res://src/content/combat_stats.gd" id="2"]
+
+[sub_resource type="Resource" id="stats"]
+script = ExtResource("2")
+max_health = 350.0
+damage = 22.0
+attack_speed = 0.9
+attack_range = 110.0
+health_regen = 16.0
+
+[resource]
+script = ExtResource("1")
+display_name = "Tanque"
+stats = SubResource("stats")
+max_mana = 100.0
+move_speed = 260.0
+size = 1.0
