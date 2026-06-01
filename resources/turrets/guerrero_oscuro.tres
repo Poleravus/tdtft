@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="TurretData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/content/turret_data.gd" id="1"]
+[ext_resource type="Script" path="res://src/content/combat_stats.gd" id="2"]
+
+[sub_resource type="Resource" id="stats"]
+script = ExtResource("2")
+max_health = 1.0
+damage = 25.0
+attack_speed = 0.9
+attack_range = 70.0
+
+[resource]
+script = ExtResource("1")
+display_name = "Guerrero Oscuro"
+stats = SubResource("stats")
+trait_tags = ["Guerrero", "Oscuro"]
+body_color = Color(0.6, 0.35, 0.15, 1)

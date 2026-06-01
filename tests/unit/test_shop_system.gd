@@ -36,3 +36,10 @@ func test_costo_por_rareza() -> void:
 	shop.setup(ShopConfig.new(), [])
 	assert_eq(shop.unit_cost(_unit(Rarity.Tier.COMUN)), 1)
 	assert_eq(shop.unit_cost(_unit(Rarity.Tier.EPICA)), 3)
+
+
+func test_valor_de_venta_por_estrella() -> void:
+	assert_eq(ShopSystemScript.sell_value(1, 1), 1)    # max(1, 1-1) = 1
+	assert_eq(ShopSystemScript.sell_value(2, 1), 1)    # 2-1 = 1
+	assert_eq(ShopSystemScript.sell_value(2, 2), 5)    # 2*3 - 1 = 5
+	assert_eq(ShopSystemScript.sell_value(3, 3), 26)   # 3*9 - 1 = 26

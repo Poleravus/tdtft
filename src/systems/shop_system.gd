@@ -29,6 +29,12 @@ func unit_cost(unit: TurretData) -> int:
 	return unit.rarity + 1
 
 
+## Oro al vender una unidad: su costo de construcción (costo × 3^(estrella-1))
+## menos 1; mínimo 1. Así una 2★ (3 copias) vale ~3×, una 3★ ~9×.
+static func sell_value(cost: int, star: int) -> int:
+	return maxi(1, cost * int(pow(3, star - 1)) - 1)
+
+
 ## Tira la oferta (shop_size slots) según las odds del nivel. Puede traer nulls
 ## si una rareza no tiene unidades disponibles (slot vacío).
 func roll(level: int) -> Array:

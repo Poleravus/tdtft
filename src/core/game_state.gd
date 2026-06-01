@@ -6,6 +6,7 @@ extends Node
 var hero: Hero                                ## actor Hero instanciado
 var universe: Universe
 var castle: CastleData
+var selected_hero: HeroData                   ## héroe elegido en el menú (persiste entre niveles)
 
 # --- Progreso / fase ---
 var round_number: int = 0

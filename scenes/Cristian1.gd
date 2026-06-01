@@ -1,21 +1,32 @@
 extends Node2D
-## Controlador del nivel: castillo + héroe, oleadas, HUD y TIENDA (siempre
-## disponible): 5 slots por odds/pool, banca (máx 12), reroll, comprar XP,
-## colocar sobre el pasto (limitado por slots de tablero = nivel) y vender
-## (clic derecho + confirmar) unidades de banca o tablero. La ronda arranca
-## solo con "Empezar". RunManager lleva fases/economía; ShopSystem la tienda.
+## Controlador del nivel: castillo + héroe, oleadas, HUD, TIENDA (comprar, banca,
+## tablero, combinar ⭐), panel de SINERGIAS (cuenta rasgos del tablero, sin bonus
+## aún), universo, pausa y temporizador. RunManager lleva fases/economía.
 
 const SlimeScene := preload("res://src/entities/Enemigos/Slime.tscn")
 const HeroScene := preload("res://src/entities/Hero/Hero.tscn")
 const CastleScene := preload("res://src/entities/Castle/Castle.tscn")
 const TurretScene := preload("res://src/entities/Torretas/Turret.tscn")
 const ShopSystemScript := preload("res://src/systems/shop_system.gd")
+const TraitSystemScript := preload("res://src/systems/trait_system.gd")
+const UniverseRes := preload("res://resources/universes/equilibrio.tres")
 const UNITS := [
-	preload("res://resources/turrets/archer.tres"),
-	preload("res://resources/turrets/guerrero.tres"),
+	preload("res://resources/turrets/arquero_oscuro.tres"),
+	preload("res://resources/turrets/arquero_claro.tres"),
+	preload("res://resources/turrets/guerrero_oscuro.tres"),
+	preload("res://resources/turrets/guerrero_claro.tres"),
 	preload("res://resources/turrets/mago.tres"),
 	preload("res://resources/turrets/bombardero.tres"),
 	preload("res://resources/turrets/sniper.tres"),
+]
+const AUGMENT_ROUNDS := [3, 10, 20]
+const AUGMENTS := [
+	preload("res://resources/augments/furia.tres"),
+	preload("res://resources/augments/fortuna.tres"),
+	preload("res://resources/augments/veterano.tres"),
+	preload("res://resources/augments/muralla.tres"),
+	preload("res://resources/augments/mercader.tres"),
+	preload("res://resources/augments/noche.tres"),
 ]
 
 const WAVE_BASE: int = 4
@@ -32,7 +43,7 @@ const BENCH_SIZE: int = 12
 
 var _castle: Castle
 var _hero: Hero
-var _shop                                ## ShopSystem (precargado)
+var _shop
 var _shop_offer: Array = []
 
 var _round_label: Label
@@ -41,29 +52,51 @@ var _hero_hp_label: Label
 var _gold_label: Label
 var _level_label: Label
 var _hint_label: Label
+var _synergy_label: Label
+var _timer_label: Label
 var _shop_box: HBoxContainer
 var _bench_box: HBoxContainer
 var _slot_buttons: Array = []
 var _sell_button: Button
 var _hide_button: Button
+var _pause_button: Button
+var _pause_overlay: Label
+var _augment_panel: Panel
+var _augment_buttons: Array = []
+var _augment_options: Array = []
+var _augments_done: Dictionary = {}
+var _defeat_panel: Panel
+var _defeat_label: Label
+var _augment_reopen_button: Button
+var _speed_button: Button
+var _speed_index: int = 0
+var _augment_pending: bool = false
 
 var _alive: int = 0
 var _spawning: bool = false
 var _wave_active: bool = false
 
-var _placing_unit: TurretData = null
-var _board: Dictionary = {}              ## celda (Vector2i) -> Turret colocada
-var _sell_pending: Dictionary = {}       ## {} = nada; o {kind, unit, value, turret?}
+var _placing_unit: Dictionary = {}
+var _board: Dictionary = {}
+var _sell_pending: Dictionary = {}
+
+var _paused: bool = false
+var _elapsed: float = 0.0
 
 
 func _ready() -> void:
+	Engine.time_scale = 1.0
 	game_over_label.hide()
 	GameState.shop_config = ShopConfig.new()
+	GameState.universe = UniverseRes
 	_shop = ShopSystemScript.new()
 	_shop.setup(GameState.shop_config, UNITS)
 
 	_build_hud()
 	_build_shop_ui()
+	_build_augment_ui()
+	_build_defeat_ui()
+	_refresh_synergies()
 
 	EventBus.base_hp_changed.connect(_on_base_hp_changed)
 	EventBus.hero_damaged.connect(_on_hero_damaged)
@@ -80,6 +113,12 @@ func _ready() -> void:
 	_spawn_castle_and_hero()
 
 
+func _process(delta: float) -> void:
+	_elapsed += delta
+	GameState.elapsed_time = _elapsed
+	_timer_label.text = "⏱ %02d:%02d" % [int(_elapsed) / 60, int(_elapsed) % 60]
+
+
 func _spawn_castle_and_hero() -> void:
 	var curve := enemy_path.curve
 	var end_global := enemy_path.to_global(curve.get_point_position(curve.point_count - 1))
@@ -88,6 +127,8 @@ func _spawn_castle_and_hero() -> void:
 	add_child(_castle)
 	_castle.global_position = end_global
 	_hero = HeroScene.instantiate()
+	if GameState.selected_hero != null:
+		_hero.data = GameState.selected_hero   # héroe elegido en el menú
 	add_child(_hero)
 	_hero.global_position = enemy_path.to_global(curve.sample_baked(curve.get_baked_length() * 0.5))
 
@@ -97,8 +138,8 @@ func _input(event: InputEvent) -> void:
 	if not (event is InputEventMouseButton and event.pressed):
 		return
 	if get_viewport().gui_get_hovered_control() != null:
-		return  # clic sobre la UI: que lo maneje el control
-	if _placing_unit != null:
+		return
+	if not _placing_unit.is_empty():
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_try_place(get_global_mouse_position())
 			get_viewport().set_input_as_handled()
@@ -108,8 +149,9 @@ func _input(event: InputEvent) -> void:
 	elif event.button_index == MOUSE_BUTTON_RIGHT:
 		var t := _turret_at(get_global_mouse_position())
 		if t != null:
-			_offer_sell({"kind": "board", "turret": t, "unit": (t as Turret).data,
-					"value": _sell_value((t as Turret).data)})
+			var tt := t as Turret
+			_offer_sell({"kind": "board", "turret": t, "data": tt.data, "star": tt.star,
+					"value": _sell_value(tt.data, tt.star)})
 			get_viewport().set_input_as_handled()
 
 
@@ -123,14 +165,21 @@ func _try_place(world_pos: Vector2) -> void:
 	if not _can_build_at(world_pos):
 		return
 	var cell := mapa.local_to_map(mapa.to_local(world_pos))
-	var turret := TurretScene.instantiate()
-	turret.data = _placing_unit
-	add_child(turret)
-	turret.global_position = mapa.to_global(mapa.map_to_local(cell))
-	_board[cell] = turret
+	_spawn_turret_at(cell, _placing_unit["data"], _placing_unit["star"])
 	GameState.bench.erase(_placing_unit)
 	_cancel_placing()
 	_refresh_bench()
+	_check_combines()
+	_refresh_synergies()
+
+
+func _spawn_turret_at(cell: Vector2i, data: TurretData, star: int) -> void:
+	var turret := TurretScene.instantiate()
+	turret.data = data
+	turret.star = star
+	add_child(turret)
+	turret.global_position = mapa.to_global(mapa.map_to_local(cell))
+	_board[cell] = turret
 
 
 func _can_build_at(world_pos: Vector2) -> bool:
@@ -144,7 +193,7 @@ func _can_build_at(world_pos: Vector2) -> bool:
 
 
 func _cancel_placing() -> void:
-	_placing_unit = null
+	_placing_unit = {}
 	_hint_label.visible = false
 
 
@@ -156,32 +205,82 @@ func _turret_at(world_pos: Vector2) -> Node:
 	return null
 
 
-# --- Vender (clic derecho + confirmar) ---
-func _sell_value(unit: TurretData) -> int:
-	return maxi(1, _shop.unit_cost(unit) - 1)
+# --- Combinar 3 iguales -> estrella+1 ---
+func _check_combines() -> void:
+	while _try_one_combine():
+		pass
+
+
+func _try_one_combine() -> bool:
+	var groups := {}
+	for entry in GameState.bench:
+		_group_add(groups, entry["data"], entry["star"], "bench", entry)
+	for cell in _board:
+		var t = _board[cell]
+		_group_add(groups, t.data, t.star, "board", cell)
+	for key in groups:
+		var g = groups[key]
+		if g["star"] < ShopConfig.MAX_STAR and g["bench"].size() + g["board"].size() >= 3:
+			_do_merge(g)
+			return true
+	return false
+
+
+func _group_add(groups: Dictionary, data: TurretData, star: int, kind: String, ref) -> void:
+	var key := str(data.get_instance_id()) + "_" + str(star)
+	if not groups.has(key):
+		groups[key] = {"data": data, "star": star, "bench": [], "board": []}
+	groups[key][kind].append(ref)
+
+
+func _do_merge(g: Dictionary) -> void:
+	var from_bench: int = mini(3, g["bench"].size())
+	var from_board: int = 3 - from_bench
+	for i in from_bench:
+		GameState.bench.erase(g["bench"][i])
+	var freed: Array = []
+	for j in from_board:
+		var cell = g["board"][j]
+		var t = _board.get(cell)
+		if is_instance_valid(t):
+			t.queue_free()
+		_board.erase(cell)
+		freed.append(cell)
+	if freed.size() > 0:
+		_spawn_turret_at(freed[0], g["data"], g["star"] + 1)
+	else:
+		GameState.bench.append({"data": g["data"], "star": g["star"] + 1})
+	_refresh_bench()
+	_refresh_synergies()
+
+
+# --- Vender ---
+func _sell_value(data: TurretData, star: int) -> int:
+	return _shop.sell_value(_shop.unit_cost(data), star)
 
 
 func _offer_sell(pending: Dictionary) -> void:
 	_sell_pending = pending
-	_sell_button.text = "Vender %s (+%d)" % [pending.unit.display_name, pending.value]
+	_sell_button.text = "Vender %s ★%d (+%d)" % [pending["data"].display_name, pending["star"], pending["value"]]
 	_sell_button.visible = true
 
 
 func _do_sell() -> void:
 	if _sell_pending.is_empty():
 		return
-	if _sell_pending.kind == "bench":
-		GameState.bench.erase(_sell_pending.unit)
+	if _sell_pending["kind"] == "bench":
+		GameState.bench.erase(_sell_pending["entry"])
 		_refresh_bench()
 	else:
-		var t = _sell_pending.turret
+		var t = _sell_pending["turret"]
 		for cell in _board.keys():
 			if _board[cell] == t:
 				_board.erase(cell)
 				break
 		if is_instance_valid(t):
 			t.queue_free()
-	RunManager.add_gold(_sell_pending.value)
+		_refresh_synergies()
+	RunManager.add_gold(_sell_pending["value"])
 	_cancel_sell()
 
 
@@ -211,10 +310,11 @@ func _on_slot_pressed(i: int) -> void:
 	if not RunManager.can_afford(cost) or not _shop.buy(unit):
 		return
 	RunManager.spend_gold(cost)
-	GameState.bench.append(unit)
+	GameState.bench.append({"data": unit, "star": 1})
 	_shop_offer[i] = null
 	_refresh_shop()
 	_refresh_bench()
+	_check_combines()
 
 
 func _on_reroll_pressed() -> void:
@@ -235,19 +335,198 @@ func _on_bench_pressed(i: int) -> void:
 		return
 	if i < GameState.bench.size():
 		_placing_unit = GameState.bench[i]
-		_hint_label.text = "Coloca %s en el pasto · clic derecho cancela" % _placing_unit.display_name
+		_hint_label.text = "Coloca %s en el pasto · clic derecho cancela" % _placing_unit["data"].display_name
 		_hint_label.visible = true
 
 
-func _on_bench_gui_input(event: InputEvent, unit: TurretData) -> void:
+func _on_bench_gui_input(event: InputEvent, entry: Dictionary) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
-		_offer_sell({"kind": "bench", "unit": unit, "value": _sell_value(unit)})
+		_offer_sell({"kind": "bench", "entry": entry, "data": entry["data"], "star": entry["star"],
+				"value": _sell_value(entry["data"], entry["star"])})
 
 
 func _on_hide_toggled(pressed: bool) -> void:
 	_shop_box.visible = not pressed
 	_bench_box.visible = not pressed
 	_hide_button.text = "Mostrar tienda" if pressed else "Ocultar tienda"
+
+
+func _on_pause_pressed() -> void:
+	_paused = not _paused
+	get_tree().paused = _paused
+	_pause_overlay.visible = _paused
+	_pause_button.text = "Reanudar" if _paused else "Pausa"
+
+
+# --- Aumentos (menú en rondas 3/10/20; placeholders sin efecto) ---
+func _maybe_offer_augment() -> void:
+	var upcoming := GameState.round_number + 1
+	if upcoming in AUGMENT_ROUNDS and not _augments_done.has(upcoming):
+		_augments_done[upcoming] = true
+		_offer_augments()
+
+
+func _offer_augments() -> void:
+	var pool := AUGMENTS.duplicate()
+	pool.shuffle()
+	_augment_options = pool.slice(0, 3)
+	for i in _augment_buttons.size():
+		var aug = _augment_options[i]
+		_augment_buttons[i].text = "%s\n%s" % [aug.display_name, aug.description]
+	_augment_pending = true
+	_augment_reopen_button.hide()
+	_augment_panel.show()
+
+
+func _on_augment_pressed(i: int) -> void:
+	if i < _augment_options.size():
+		_choose_augment(_augment_options[i])
+
+
+func _choose_augment(aug) -> void:
+	GameState.active_augments.append(aug)
+	EventBus.augment_chosen.emit(aug)
+	_augment_pending = false
+	_augment_reopen_button.hide()
+	_augment_panel.hide()
+	_refresh_synergies()
+
+
+func _on_augment_hide() -> void:
+	_augment_panel.hide()
+	if _augment_pending:
+		_augment_reopen_button.show()
+
+
+func _on_augment_reopen() -> void:
+	_augment_panel.show()
+	_augment_reopen_button.hide()
+
+
+func _on_speed_pressed() -> void:
+	var speeds := [1.0, 2.0, 3.0]
+	_speed_index = (_speed_index + 1) % speeds.size()
+	Engine.time_scale = speeds[_speed_index]
+	_speed_button.text = "Velocidad x%d" % int(speeds[_speed_index])
+
+
+func _build_augment_ui() -> void:
+	_augment_panel = Panel.new()
+	_augment_panel.visible = false
+	_augment_panel.anchor_left = 0.5
+	_augment_panel.anchor_top = 0.5
+	_augment_panel.anchor_right = 0.5
+	_augment_panel.anchor_bottom = 0.5
+	_augment_panel.offset_left = -260.0
+	_augment_panel.offset_right = 260.0
+	_augment_panel.offset_top = -170.0
+	_augment_panel.offset_bottom = 170.0
+	ui.add_child(_augment_panel)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	vb.anchor_right = 1.0
+	vb.anchor_bottom = 1.0
+	vb.offset_left = 16.0
+	vb.offset_top = 16.0
+	vb.offset_right = -16.0
+	vb.offset_bottom = -16.0
+	_augment_panel.add_child(vb)
+
+	var title := Label.new()
+	title.text = "Elige un aumento"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 26)
+	vb.add_child(title)
+
+	for i in 3:
+		var b := Button.new()
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		b.pressed.connect(_on_augment_pressed.bind(i))
+		vb.add_child(b)
+		_augment_buttons.append(b)
+
+	var hide_aug := Button.new()
+	hide_aug.text = "Ver mesa (ocultar)"
+	hide_aug.pressed.connect(_on_augment_hide)
+	vb.add_child(hide_aug)
+
+	_augment_reopen_button = Button.new()
+	_augment_reopen_button.text = "Elegir aumento"
+	_augment_reopen_button.visible = false
+	_augment_reopen_button.anchor_left = 0.5
+	_augment_reopen_button.anchor_right = 0.5
+	_augment_reopen_button.offset_left = -90.0
+	_augment_reopen_button.offset_right = 90.0
+	_augment_reopen_button.offset_top = 48.0
+	_augment_reopen_button.offset_bottom = 84.0
+	_augment_reopen_button.pressed.connect(_on_augment_reopen)
+	ui.add_child(_augment_reopen_button)
+
+
+# --- Pantalla de derrota ---
+func _build_defeat_ui() -> void:
+	_defeat_panel = Panel.new()
+	_defeat_panel.visible = false
+	_defeat_panel.process_mode = Node.PROCESS_MODE_ALWAYS  # clickeable con el árbol en pausa
+	_defeat_panel.anchor_left = 0.5
+	_defeat_panel.anchor_top = 0.5
+	_defeat_panel.anchor_right = 0.5
+	_defeat_panel.anchor_bottom = 0.5
+	_defeat_panel.offset_left = -220.0
+	_defeat_panel.offset_right = 220.0
+	_defeat_panel.offset_top = -150.0
+	_defeat_panel.offset_bottom = 150.0
+	ui.add_child(_defeat_panel)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	vb.anchor_right = 1.0
+	vb.anchor_bottom = 1.0
+	vb.offset_left = 16.0
+	vb.offset_top = 16.0
+	vb.offset_right = -16.0
+	vb.offset_bottom = -16.0
+	_defeat_panel.add_child(vb)
+
+	var t := Label.new()
+	t.text = "Derrota"
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t.add_theme_font_size_override("font_size", 40)
+	vb.add_child(t)
+
+	_defeat_label = Label.new()
+	_defeat_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(_defeat_label)
+
+	var retry := Button.new()
+	retry.text = "Reintentar"
+	retry.custom_minimum_size = Vector2(0, 50)
+	retry.pressed.connect(_on_retry)
+	vb.add_child(retry)
+
+	var menu := Button.new()
+	menu.text = "Menú principal"
+	menu.custom_minimum_size = Vector2(0, 50)
+	menu.pressed.connect(_on_menu)
+	vb.add_child(menu)
+
+
+func _show_defeat() -> void:
+	_defeat_label.text = "Llegaste a la ronda %d\nTiempo: %02d:%02d" % [GameState.round_number, int(_elapsed) / 60, int(_elapsed) % 60]
+	_defeat_panel.show()
+	get_tree().paused = true
+
+
+func _on_retry() -> void:
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/Cristian1.tscn")
+
+
+func _on_menu() -> void:
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 
 # --- HUD + UI ---
@@ -257,8 +536,9 @@ func _build_hud() -> void:
 	_hero_hp_label = _make_label(Vector2(16, 72))
 	_gold_label = _make_label(Vector2(16, 100))
 	_level_label = _make_label(Vector2(16, 128))
-	_hint_label = _make_label(Vector2(16, 160))
+	_hint_label = _make_label(Vector2(16, 156))
 	_hint_label.visible = false
+	_synergy_label = _make_label(Vector2(16, 196))
 	_gold_label.text = "Oro: 0"
 	_update_level_label()
 
@@ -301,41 +581,78 @@ func _build_shop_ui() -> void:
 	xp.pressed.connect(_on_xp_pressed)
 	_shop_box.add_child(xp)
 
+	var lock := CheckButton.new()
+	lock.text = "Fijar"
+	lock.button_pressed = GameState.shop_locked
+	lock.toggled.connect(func(on: bool): GameState.shop_locked = on)
+	_shop_box.add_child(lock)
+
 	var start := Button.new()
 	start.text = "▶ Empezar"
 	start.custom_minimum_size = Vector2(110, 64)
 	start.pressed.connect(RunManager.request_start_round)
 	_shop_box.add_child(start)
 
-	# botón de venta (aparece al hacer clic derecho sobre una unidad)
 	_sell_button = Button.new()
 	_sell_button.visible = false
-	_sell_button.anchor_left = 0.5
-	_sell_button.anchor_right = 0.5
-	_sell_button.anchor_top = 1.0
-	_sell_button.anchor_bottom = 1.0
-	_sell_button.offset_left = -120.0
-	_sell_button.offset_right = 120.0
-	_sell_button.offset_top = -184.0
-	_sell_button.offset_bottom = -144.0
+	_anchor_center_bottom(_sell_button, -184.0, -144.0)
 	_sell_button.pressed.connect(_do_sell)
 	ui.add_child(_sell_button)
 
-	# botón ocultar/mostrar tienda (siempre visible, arriba a la derecha)
-	_hide_button = Button.new()
-	_hide_button.text = "Ocultar tienda"
+	# temporizador (arriba al centro)
+	_timer_label = Label.new()
+	_timer_label.text = "⏱ 00:00"
+	_timer_label.anchor_left = 0.5
+	_timer_label.anchor_right = 0.5
+	_timer_label.offset_left = -50.0
+	_timer_label.offset_right = 50.0
+	_timer_label.offset_top = 12.0
+	_timer_label.add_theme_font_size_override("font_size", 22)
+	ui.add_child(_timer_label)
+
+	# botones arriba a la derecha: pausa y ocultar tienda
+	_pause_button = _corner_button("Pausa", -300.0, -168.0)
+	_pause_button.process_mode = Node.PROCESS_MODE_ALWAYS  # clickeable estando en pausa
+	_pause_button.pressed.connect(_on_pause_pressed)
+	ui.add_child(_pause_button)
+
+	_hide_button = _corner_button("Ocultar tienda", -160.0, -12.0)
 	_hide_button.toggle_mode = true
-	_hide_button.anchor_left = 1.0
-	_hide_button.anchor_right = 1.0
-	_hide_button.offset_left = -160.0
-	_hide_button.offset_right = -12.0
-	_hide_button.offset_top = 12.0
-	_hide_button.offset_bottom = 48.0
 	_hide_button.toggled.connect(_on_hide_toggled)
 	ui.add_child(_hide_button)
 
+	_speed_button = _corner_button("Velocidad x1", -460.0, -312.0)
+	_speed_button.process_mode = Node.PROCESS_MODE_ALWAYS
+	_speed_button.pressed.connect(_on_speed_pressed)
+	ui.add_child(_speed_button)
 
-## Ancla un Control horizontal abajo (ancho completo), con offsets top/bottom.
+	# overlay de PAUSA (centro)
+	_pause_overlay = Label.new()
+	_pause_overlay.text = "PAUSA"
+	_pause_overlay.visible = false
+	_pause_overlay.anchor_left = 0.5
+	_pause_overlay.anchor_top = 0.5
+	_pause_overlay.anchor_right = 0.5
+	_pause_overlay.anchor_bottom = 0.5
+	_pause_overlay.offset_left = -80.0
+	_pause_overlay.offset_right = 80.0
+	_pause_overlay.offset_top = -30.0
+	_pause_overlay.add_theme_font_size_override("font_size", 56)
+	ui.add_child(_pause_overlay)
+
+
+func _corner_button(text: String, left: float, right: float) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.anchor_left = 1.0
+	b.anchor_right = 1.0
+	b.offset_left = left
+	b.offset_right = right
+	b.offset_top = 12.0
+	b.offset_bottom = 48.0
+	return b
+
+
 func _anchor_row(c: Control, top: float, bottom: float) -> void:
 	c.anchor_left = 0.0
 	c.anchor_right = 1.0
@@ -343,6 +660,17 @@ func _anchor_row(c: Control, top: float, bottom: float) -> void:
 	c.anchor_bottom = 1.0
 	c.offset_left = 12.0
 	c.offset_right = -12.0
+	c.offset_top = top
+	c.offset_bottom = bottom
+
+
+func _anchor_center_bottom(c: Control, top: float, bottom: float) -> void:
+	c.anchor_left = 0.5
+	c.anchor_right = 0.5
+	c.anchor_top = 1.0
+	c.anchor_bottom = 1.0
+	c.offset_left = -130.0
+	c.offset_right = 130.0
 	c.offset_top = top
 	c.offset_bottom = bottom
 
@@ -365,14 +693,32 @@ func _refresh_bench() -> void:
 	for child in _bench_box.get_children():
 		child.queue_free()
 	for i in GameState.bench.size():
-		var unit: TurretData = GameState.bench[i]
+		var entry = GameState.bench[i]
 		var b := Button.new()
-		b.text = unit.display_name
-		b.custom_minimum_size = Vector2(90, 36)
-		b.modulate = unit.body_color.lerp(Color.WHITE, 0.45)
+		b.text = "%s ★%d" % [entry["data"].display_name, entry["star"]]
+		b.custom_minimum_size = Vector2(96, 36)
+		b.modulate = entry["data"].body_color.lerp(Color.WHITE, 0.45)
 		b.pressed.connect(_on_bench_pressed.bind(i))
-		b.gui_input.connect(_on_bench_gui_input.bind(unit))
+		b.gui_input.connect(_on_bench_gui_input.bind(entry))
 		_bench_box.add_child(b)
+
+
+func _refresh_synergies() -> void:
+	var datas: Array = []
+	for cell in _board:
+		datas.append(_board[cell].data)
+	var counts: Dictionary = TraitSystemScript.count_tags(datas)
+	var text := "Universo: %s\nSinergias:" % GameState.universe.display_name
+	if counts.is_empty():
+		text += "\n  (coloca unidades)"
+	else:
+		for tag in counts:
+			text += "\n  %s %d" % [tag, counts[tag]]
+	if not GameState.active_augments.is_empty():
+		text += "\nAumentos:"
+		for aug in GameState.active_augments:
+			text += "\n  %s" % aug.display_name
+	_synergy_label.text = text
 
 
 func _update_level_label() -> void:
@@ -405,10 +751,15 @@ func _on_progress_changed(_v: int) -> void:
 func _on_phase_changed(phase: int) -> void:
 	if phase == RunManager.Phase.PREP:
 		_round_label.text = "Ronda %d — preparación" % (GameState.round_number + 1)
-		_roll_shop()
+		if not GameState.shop_locked:
+			_roll_shop()
+		_maybe_offer_augment()
 	else:
 		_cancel_placing()
 		_cancel_sell()
+		_augment_panel.hide()
+		_augment_reopen_button.hide()
+		_augment_pending = false
 		_round_label.text = "Ronda %d — ¡combate!" % GameState.round_number
 
 
@@ -466,4 +817,4 @@ func _on_run_ended(victory: bool) -> void:
 	_cancel_placing()
 	_cancel_sell()
 	if not victory:
-		game_over_label.show()
+		_show_defeat()

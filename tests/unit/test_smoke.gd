@@ -9,3 +9,5 @@ func test_scripts_parsean() -> void:
 	assert_not_null(preload("res://src/entities/Enemigos/enemy.gd"), "Enemy parsea")
 	assert_not_null(preload("res://src/entities/Enemigos/Slime.gd"), "Slime parsea")
 	assert_not_null(preload("res://src/entities/Castle/Castle.gd"), "Castle parsea")
+	assert_not_null(preload("res://scenes/main_menu.gd"), "MainMenu parsea")
+	assert_not_null(preload("res://scenes/hero_select.gd"), "HeroSelect parsea")

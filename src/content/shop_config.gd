@@ -18,7 +18,7 @@ const COMBINE_COUNT: int = 3     ## 3 iguales -> sube de estrella
 ## Copias en el pool por rareza [COMUN, RARA, EPICA, LEGENDARIA].
 ## Escasez estilo TFT: 4★ pide 27 copias (imposible en rarezas altas) y
 ## 3★ pide 9 (el reto duro para épica/legendaria).
-@export var pool_per_unit: PackedInt32Array = PackedInt32Array([22, 16, 12, 10])
+@export var pool_per_unit: PackedInt32Array = PackedInt32Array([30, 16, 12, 10])
 
 ## Probabilidad por rareza según nivel (cada fila suma 1.0). Índice = nivel-1.
 ## [P(comun), P(rara), P(epica), P(legendaria)]

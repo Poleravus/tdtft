@@ -10,7 +10,8 @@ extends Resource
 @export var splash_radius: float = 0.0                 ## >0 = daño en área (bombardero)
 @export var body_color: Color = Color(0.3, 0.8, 0.3)  ## color del cuadrado (placeholder)
 @export var rarity: Rarity.Tier = Rarity.Tier.COMUN
-@export var traits: Array[Trait] = []         ## sinergias
+@export var traits: Array[Trait] = []         ## sinergias con bonus (a futuro)
+@export var trait_tags: Array = []            ## rasgos para el panel de sinergias (placeholder, sin bonus)
 @export var star_stat_multiplier: float = 1.8 ## stats ×este factor por cada estrella
 
 ## --- Invocación (opcional; una torre de daño deja esto vacío) ---
